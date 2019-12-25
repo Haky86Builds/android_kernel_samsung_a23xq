@@ -2382,6 +2382,7 @@ CONFIG_SERIO_LIBPS2=y
 # Character devices
 #
 CONFIG_TTY=y
+# CONFIG_VT is not set
 CONFIG_UNIX98_PTYS=y
 # CONFIG_LEGACY_PTYS is not set
 # CONFIG_SERIAL_NONSTANDARD is not set
@@ -4166,7 +4167,6 @@ CONFIG_HID_WIIMOTE=y
 # CONFIG_HID_ZYDACRON is not set
 # CONFIG_HID_SENSOR_HUB is not set
 # CONFIG_HID_ALPS is not set
-CONFIG_HID_QVR=y
 # end of Special HID drivers
 
 #
