@@ -11,6 +11,7 @@ endif
 
 ccflags-y += -I$(srctree)/techpack/camera/include/uapi/camera
 ccflags-y += -I$(srctree)
+ccflags-y += -I$(srctree)/drivers/misc/
 
 camera-y := \
 	cam_req_mgr/cam_req_mgr_core.o \
@@ -170,6 +171,7 @@ camera-$(CONFIG_SPECTRA_SENSOR) += \
 	cam_sensor_module/cam_sensor_io/cam_sensor_qup_i2c.o \
 	cam_sensor_module/cam_sensor_io/cam_sensor_spi.o \
 	cam_sensor_module/cam_sensor_utils/cam_sensor_util.o \
+	cam_sensor_module/cam_sensor_utils/cam_sysfs_init.o \
 	cam_sensor_module/cam_res_mgr/cam_res_mgr.o
 
 camera-$(CONFIG_LEDS_QPNP_FLASH_V2) += \
@@ -182,6 +184,12 @@ camera-y += \
 	cam_sensor_module/cam_flash/cam_flash_dev.o \
 	cam_sensor_module/cam_flash/cam_flash_core.o \
 	cam_sensor_module/cam_flash/cam_flash_soc.o
+endif
+
+ifneq (,$(filter $(CONFIG_SAMSUNG_OIS_MCU_STM32),y m))
+camera-y += \
+	cam_sensor_module/cam_ois/cam_ois_mcu_stm32g.o \
+	cam_sensor_module/cam_ois/cam_ois_thread.o
 endif
 
 camera-$(CONFIG_SPECTRA_CUSTOM) += \

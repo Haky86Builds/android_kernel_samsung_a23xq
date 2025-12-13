@@ -3710,9 +3710,6 @@ int msm_venc_enable_hybrid_hp(struct msm_vidc_inst *inst)
 	if (ctrl->val)
 		return 0;
 
-	if (msm_vidc_get_fps(inst) <= 60)
-		return 0;
-
 	ctrl = get_ctrl(inst,
 		V4L2_CID_MPEG_VIDC_VIDEO_HEVC_MAX_HIER_CODING_LAYER);
 	layer = get_ctrl(inst, V4L2_CID_MPEG_VIDEO_HEVC_HIER_CODING_LAYER);
@@ -4811,6 +4808,13 @@ int handle_all_intra_restrictions(struct msm_vidc_inst *inst)
 	fps_max = capability->cap[CAP_ALLINTRA_MAX_FPS].max;
 	s_vpr_h(inst->sid, "%s: rc_type %u, fps %u, fps_max %u\n",
 		__func__, inst->rc_type, n_fps, fps_max);
+	if (inst->all_intra && n_fps > fps_max) {
+		inst->clk_data.frame_rate = fps_max << 16;
+		n_fps = fps_max;
+		s_vpr_h(inst->sid,
+			"%s:cap2 frame rate to %u for allintra encoding",
+			__func__, inst->clk_data.frame_rate >> 16);
+	}
 	if ((inst->rc_type != V4L2_MPEG_VIDEO_BITRATE_MODE_VBR &&
 		inst->rc_type != RATE_CONTROL_OFF &&
 		inst->rc_type != RATE_CONTROL_LOSSLESS) ||

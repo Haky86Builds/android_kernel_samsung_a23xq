@@ -367,6 +367,68 @@ int32_t cam_qup_i2c_write_table(struct camera_io_master *client,
 	return rc;
 }
 
+
+int32_t cam_qup_i2c_write_seq_ss(struct camera_io_master *client,
+	uint32_t addr, uint8_t *data,
+	enum camera_sensor_i2c_type addr_type,
+	uint32_t num_byte)
+{
+	int32_t rc = -EFAULT;
+	unsigned char *buf = NULL;
+	int i = 0, len = 0;
+
+	if (addr_type <= CAMERA_SENSOR_I2C_TYPE_INVALID
+		|| addr_type >= CAMERA_SENSOR_I2C_TYPE_MAX) {
+		CAM_ERR(CAM_SENSOR, "Failed with addr_type verification");
+		return rc;
+	}
+
+	if ((num_byte == 0) || (num_byte > I2C_REG_DATA_MAX)) {
+		CAM_ERR(CAM_SENSOR, "num_byte:0x%x max supported:0x%x",
+			num_byte, I2C_REG_DATA_MAX);
+		return rc;
+	}
+
+	buf = kzalloc(addr_type + num_byte, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (addr_type == CAMERA_SENSOR_I2C_TYPE_BYTE) {
+		buf[0] = addr;
+		len = 1;
+	} else if (addr_type == CAMERA_SENSOR_I2C_TYPE_WORD) {
+		buf[0] = addr >> BITS_PER_BYTE;
+		buf[1] = addr;
+		len = 2;
+	} else if (addr_type == CAMERA_SENSOR_I2C_TYPE_3B) {
+		buf[0] = addr >> 16;
+		buf[1] = addr >> 8;
+		buf[2] = addr;
+		len = 3;
+	} else {
+		buf[0] = addr >> 24;
+		buf[1] = addr >> 16;
+		buf[2] = addr >> 8;
+		buf[3] = addr;
+		len = 4;
+	}
+
+	for (i = 0; i < num_byte; i++) {
+		buf[i+len] = data[i];
+		CAM_DBG(CAM_SENSOR, "Byte %d: 0x%x\n", i+len, buf[i+len]);
+		CAM_DBG(CAM_SENSOR, "Data: 0x%x\n", data[i]);
+	}
+	rc = cam_qup_i2c_txdata(client, buf, len+num_byte);
+	if (rc < 0)
+		CAM_ERR(CAM_SENSOR, "%s fail\n", __func__);
+
+	kfree(buf);
+	buf = NULL;
+	return rc;
+}
+
+
+
 static int32_t cam_qup_i2c_write_seq(struct camera_io_master *client,
 	struct cam_sensor_i2c_reg_setting *write_setting)
 {

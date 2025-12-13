@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -60,8 +60,6 @@ enum {
 	HPH_COMP_DELAY,
 	HPH_PA_DELAY,
 	AMIC2_BCS_ENABLE,
-        WCD_HPHL_EN,
-        WCD_EAR_EN,
 };
 
 static const DECLARE_TLV_DB_SCALE(line_gain, 0, 7, 1);
@@ -315,10 +313,6 @@ static int wcd937x_parse_port_mapping(struct device *dev,
 
 	for (i = 0; i < map_length; i++) {
 		port_num = dt_array[NUM_SWRS_DT_PARAMS * i];
-		if (port_num >= MAX_PORT || ch_iter >= MAX_CH_PER_PORT) {
-			dev_err(dev, "%s: Invalid port or channel number\n", __func__);
-			goto err_pdata_fail;
-		}
 		slave_port_type = dt_array[NUM_SWRS_DT_PARAMS * i + 1];
 		ch_mask = dt_array[NUM_SWRS_DT_PARAMS * i + 2];
 		ch_rate = dt_array[NUM_SWRS_DT_PARAMS * i + 3];
@@ -882,7 +876,6 @@ static int wcd937x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 		set_bit(HPH_PA_DELAY, &wcd937x->status_mask);
 		snd_soc_component_update_bits(component,
 				WCD937X_DIGITAL_PDM_WD_CTL0, 0x17, 0x13);
-		set_bit(WCD_HPHL_EN, &wcd937x->status_mask);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
 		/*
@@ -913,14 +906,12 @@ static int wcd937x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 				WCD937X_IRQ_HPHL_PDM_WD_INT);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
-		if (!test_bit(WCD_EAR_EN, &wcd937x->status_mask)) {
-			wcd_disable_irq(&wcd937x->irq_info,
+		wcd_disable_irq(&wcd937x->irq_info,
 				WCD937X_IRQ_HPHL_PDM_WD_INT);
-			if (wcd937x->update_wcd_event)
-				wcd937x->update_wcd_event(wcd937x->handle,
+		if (wcd937x->update_wcd_event)
+			wcd937x->update_wcd_event(wcd937x->handle,
 						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX1 << 0x10 | 0x1));
-		}
 		blocking_notifier_call_chain(&wcd937x->mbhc->notifier,
 					     WCD_EVENT_PRE_HPHL_PA_OFF,
 					     &wcd937x->mbhc->wcd_mbhc);
@@ -951,7 +942,6 @@ static int wcd937x_codec_enable_hphl_pa(struct snd_soc_dapm_widget *w,
 			     WCD_CLSH_EVENT_POST_PA,
 			     WCD_CLSH_STATE_HPHL,
 			     hph_mode);
-		clear_bit(WCD_HPHL_EN, &wcd937x->status_mask);
 		break;
 	};
 	return ret;
@@ -1040,12 +1030,10 @@ static int wcd937x_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 			snd_soc_component_update_bits(component,
 					WCD937X_DIGITAL_PDM_WD_CTL2,
 					0x05, 0x05);
-		else {
+		else
 			snd_soc_component_update_bits(component,
 					WCD937X_DIGITAL_PDM_WD_CTL0,
 					0x17, 0x13);
-			set_bit(WCD_EAR_EN, &wcd937x->status_mask);
-		}
 		if (!wcd937x->comp1_enable)
 			snd_soc_component_update_bits(component,
 				WCD937X_ANA_EAR_COMPANDER_CTL, 0x80, 0x80);
@@ -1068,24 +1056,16 @@ static int wcd937x_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 					WCD937X_IRQ_HPHL_PDM_WD_INT);
 		break;
 	case SND_SOC_DAPM_PRE_PMD:
-		if (wcd937x->ear_rx_path & EAR_RX_PATH_AUX) {
+		if (wcd937x->ear_rx_path & EAR_RX_PATH_AUX)
 			wcd_disable_irq(&wcd937x->irq_info,
 					WCD937X_IRQ_AUX_PDM_WD_INT);
-			if (wcd937x->update_wcd_event)
-				wcd937x->update_wcd_event(wcd937x->handle,
-					SLV_BOLERO_EVT_RX_MUTE,
-					(WCD_RX1 << 0x10 | 0x1));
-		}
-		else {
-			if(!test_bit(WCD_HPHL_EN, &wcd937x->status_mask)) {
-				wcd_disable_irq(&wcd937x->irq_info,
+		else
+			wcd_disable_irq(&wcd937x->irq_info,
 					WCD937X_IRQ_HPHL_PDM_WD_INT);
-				if (wcd937x->update_wcd_event)
-					wcd937x->update_wcd_event(wcd937x->handle,
+		if (wcd937x->update_wcd_event)
+			wcd937x->update_wcd_event(wcd937x->handle,
 						SLV_BOLERO_EVT_RX_MUTE,
 						(WCD_RX1 << 0x10 | 0x1));
-			}
-		}
 		break;
 	case SND_SOC_DAPM_POST_PMD:
 		if (!wcd937x->comp1_enable)
@@ -1102,12 +1082,10 @@ static int wcd937x_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 			snd_soc_component_update_bits(component,
 					WCD937X_DIGITAL_PDM_WD_CTL2,
 					0x05, 0x00);
-		else {
+		else
 			snd_soc_component_update_bits(component,
 					WCD937X_DIGITAL_PDM_WD_CTL0,
 					0x17, 0x00);
-			clear_bit(WCD_EAR_EN, &wcd937x->status_mask);
-		}
 		usleep_range(10000, 10010);
 		/* disable EAR CnP FSM */
 		snd_soc_component_update_bits(component,
@@ -1173,16 +1151,13 @@ static int wcd937x_enable_rx1(struct snd_soc_dapm_widget *w,
 			wcd937x_rx_connect_port(component, COMP_L, true);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		if (!test_bit(WCD_HPHL_EN, &wcd937x->status_mask) &&
-			!test_bit(WCD_EAR_EN, &wcd937x->status_mask)) {
-			wcd937x_rx_connect_port(component, HPH_L, false);
-			if (wcd937x->comp1_enable)
-				wcd937x_rx_connect_port(component, COMP_L, false);
-			wcd937x_rx_clk_disable(component);
-			snd_soc_component_update_bits(component,
+		wcd937x_rx_connect_port(component, HPH_L, false);
+		if (wcd937x->comp1_enable)
+			wcd937x_rx_connect_port(component, COMP_L, false);
+		wcd937x_rx_clk_disable(component);
+		snd_soc_component_update_bits(component,
 				WCD937X_DIGITAL_CDC_DIG_CLK_CTL,
 				0x01, 0x00);
-		}
 		break;
 	};
 	return 0;
@@ -1647,7 +1622,7 @@ int wcd937x_micbias_control(struct snd_soc_component *component,
 					&wcd937x->mbhc->notifier, pre_off_event,
 					&wcd937x->mbhc->wcd_mbhc);
 			snd_soc_component_update_bits(component, micb_reg,
-				0xC0, 0x00);
+				0xC0, 0xC0);
 			if (post_off_event && wcd937x->mbhc)
 				blocking_notifier_call_chain(
 					&wcd937x->mbhc->notifier,
@@ -3185,6 +3160,21 @@ static int wcd937x_reset_low(struct device *dev)
 struct wcd937x_pdata *wcd937x_populate_dt_data(struct device *dev)
 {
 	struct wcd937x_pdata *pdata = NULL;
+#ifdef CONFIG_SND_SOC_IMPED_SENSING
+	int rc = 0;
+	int i;
+	struct of_phandle_args imp_list;
+	struct wcd937x_gain_table default_table[MAX_IMPEDANCE_TABLE] = {
+		{0, 0, 6},
+		{1, 13, 0},
+		{14, 25, 3},
+		{26, 42, 4},
+		{43, 100, 5},
+		{101, 200, 7},
+		{201, 1000, 8},
+		{1001, INT_MAX, 6},
+};
+#endif
 
 	pdata = kzalloc(sizeof(struct wcd937x_pdata),
 				GFP_KERNEL);
@@ -3213,6 +3203,26 @@ struct wcd937x_pdata *wcd937x_populate_dt_data(struct device *dev)
 	pdata->rx_slave = of_parse_phandle(dev->of_node, "qcom,rx-slave", 0);
 	pdata->tx_slave = of_parse_phandle(dev->of_node, "qcom,tx-slave", 0);
 	wcd937x_dt_parse_micbias_info(dev, &pdata->micbias);
+
+#ifdef CONFIG_SND_SOC_IMPED_SENSING
+	for (i = 0; i < ARRAY_SIZE(pdata->imp_table); i++) {
+		rc = of_parse_phandle_with_args(dev->of_node,
+			"imp-table", "#list-imp-cells", i, &imp_list);
+		if (rc < 0) {
+			pdata->imp_table[i].min = default_table[i].min;
+			pdata->imp_table[i].max = default_table[i].max;
+			pdata->imp_table[i].gain = default_table[i].gain;
+		} else {
+			pdata->imp_table[i].min = imp_list.args[0];
+			pdata->imp_table[i].max = imp_list.args[1];
+			pdata->imp_table[i].gain = imp_list.args[2];
+		}
+		dev_info(dev, "impedance gain table %d, %d, %d\n",
+			pdata->imp_table[i].min,
+			pdata->imp_table[i].max,
+			pdata->imp_table[i].gain);
+	}
+#endif
 
 	return pdata;
 }

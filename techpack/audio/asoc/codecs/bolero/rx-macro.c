@@ -407,6 +407,10 @@ enum {
 	RX_MACRO_AIF3_CAP,
 	RX_MACRO_MAX_AIF_CAP_DAIS
 };
+
+#ifdef CONFIG_SND_SOC_IMPED_SENSING
+static int wcd_impedance_offset;
+#endif
 /*
  * @dev: rx macro device pointer
  * @comp_enabled: compander enable mixer value set
@@ -465,7 +469,6 @@ struct rx_macro_priv {
 	u16 default_clk_id;
 	int8_t rx0_gain_val;
 	int8_t rx1_gain_val;
-	u32 mclk_freq;
 };
 
 static struct snd_soc_dai_driver rx_macro_dai[];
@@ -763,6 +766,61 @@ static struct snd_soc_dai_driver rx_macro_dai[] = {
 	},
 };
 
+#ifdef CONFIG_SND_SOC_IMPED_SENSING
+static int wcd_impedance_vol_get(struct snd_kcontrol *kcontrol,
+		      struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
+	struct soc_mixer_control *mc =
+	    (struct soc_mixer_control *)kcontrol->private_value;
+	unsigned int reg = mc->reg;
+	unsigned int shift = mc->shift;
+	int max = mc->max;
+	int min = mc->min;
+	unsigned int mask = (1 << (fls(min + max) - 1)) - 1;
+	unsigned int val;
+	int ret;
+
+	ret = snd_soc_component_read(component, reg, &val);
+	if (ret < 0)
+		return ret;
+
+	ucontrol->value.integer.value[0] = ((val >> shift) - min) & mask;
+
+	return 0;
+}
+
+static int wcd_impedance_vol_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct soc_mixer_control *mc =
+		(struct soc_mixer_control *)kcontrol->private_value;
+	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+	unsigned int reg = mc->reg;
+	unsigned int shift = mc->shift;
+	int min = mc->min;
+	int max = mc->max;
+	unsigned int mask = (1U << (fls(min + max) - 1)) - 1;
+	unsigned int val, val_mask;
+	int ret;
+
+	val = (ucontrol->value.integer.value[0] + min) & mask;
+
+	pr_info("%s impedance_offset %d\n", __func__, wcd_impedance_offset);
+
+	val += wcd_impedance_offset;
+	val = val << shift;
+
+	val_mask = mask << shift;
+
+	ret = snd_soc_component_update_bits(component, reg, val_mask, val);
+	if (ret < 0)
+		return ret;
+
+	return ret;
+}
+#endif
+
 static int get_impedance_index(int imped)
 {
 	int i = 0;
@@ -790,6 +848,16 @@ ret:
 			__func__, imped_index[i].index);
 	return imped_index[i].index;
 }
+
+#ifdef CONFIG_SND_SOC_IMPED_SENSING
+static void sec_wcd_imp_offset(struct snd_soc_component *component,
+					   int imped)
+{
+	wcd_impedance_offset = imped;
+	pr_info("%s: selected impedance offset = %d\n",
+			__func__, wcd_impedance_offset);
+}
+#endif
 
 /*
  * rx_macro_wcd_clsh_imped_config -
@@ -1412,12 +1480,11 @@ static int rx_macro_mclk_event(struct snd_soc_dapm_widget *w,
 	int ret = 0;
 	struct device *rx_dev = NULL;
 	struct rx_macro_priv *rx_priv = NULL;
-	int mclk_freq = 0;
+	int mclk_freq = MCLK_FREQ;
 
 	if (!rx_macro_get_data(component, &rx_dev, &rx_priv, __func__))
 		return -EINVAL;
 
-	mclk_freq = rx_priv->mclk_freq;
 	dev_dbg(rx_dev, "%s: event = %d\n", __func__, event);
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
@@ -1582,6 +1649,11 @@ static int rx_macro_event_handler(struct snd_soc_component *component,
 		snd_soc_component_update_bits(component,
 				BOLERO_CDC_RX_RX1_RX_PATH_CFG0, 0x04, data);
 		break;
+#ifdef CONFIG_SND_SOC_IMPED_SENSING
+	case SEC_BOLERO_MACRO_EVT_IMPED_TRUE:
+		sec_wcd_imp_offset(component, data);
+		break;
+#endif
 	}
 done:
 	return ret;
@@ -2691,8 +2763,7 @@ static void rx_macro_hphdelay_lutbypass(struct snd_soc_component *component,
 	}
 
 	if (hph_lut_bypass_reg && SND_SOC_DAPM_EVENT_OFF(event)) {
-		if (!rx_priv->is_ear_mode_on)
-			snd_soc_component_update_bits(component,
+		snd_soc_component_update_bits(component,
 					BOLERO_CDC_RX_RX0_RX_PATH_CFG1,
 					0x02, 0x00);
 		snd_soc_component_update_bits(component, hph_lut_bypass_reg,
@@ -3160,6 +3231,16 @@ static const struct snd_kcontrol_new rx_macro_snd_controls[] = {
 	SOC_SINGLE_S8_TLV("RX_RX2 Mix Digital Volume",
 			  BOLERO_CDC_RX_RX2_RX_VOL_MIX_CTL,
 			  -84, 40, digital_gain),
+#ifdef CONFIG_SND_SOC_IMPED_SENSING
+	SOC_SINGLE_RANGE_EXT_TLV("RX_RX0 HPH Digital Volume",
+			  BOLERO_CDC_RX_RX0_RX_VOL_CTL, 0, -84, 40, 0,
+			  wcd_impedance_vol_get, wcd_impedance_vol_put,
+			  digital_gain),
+	SOC_SINGLE_RANGE_EXT_TLV("RX_RX1 HPH Digital Volume",
+			  BOLERO_CDC_RX_RX1_RX_VOL_CTL, 0, -84, 40, 0,
+			  wcd_impedance_vol_get, wcd_impedance_vol_put,
+			  digital_gain),
+#endif
 
 	SOC_SINGLE_EXT("RX_COMP1 Switch", SND_SOC_NOPM, RX_MACRO_COMP1, 1, 0,
 		rx_macro_get_compander, rx_macro_set_compander),
@@ -4169,14 +4250,13 @@ static int rx_macro_probe(struct platform_device *pdev)
 {
 	struct macro_ops ops = {0};
 	struct rx_macro_priv *rx_priv = NULL;
-	u32 rx_base_addr = 0, muxsel = 0, mclk_freq = 0;
+	u32 rx_base_addr = 0, muxsel = 0;
 	char __iomem *rx_io_base = NULL, *muxsel_io = NULL;
 	int ret = 0;
 	u8 bcl_pmic_params[3];
 	u32 default_clk_id = 0;
 	u32 is_used_rx_swr_gpio = 1;
 	const char *is_used_rx_swr_gpio_dt = "qcom,is-used-swr-gpio";
-	const char *cdc_mclk_clk_rate = "qcom,cdc-mclk-clk-rate";
 
 	if (!bolero_is_va_macro_registered(&pdev->dev)) {
 		dev_err(&pdev->dev,
@@ -4211,15 +4291,6 @@ static int rx_macro_probe(struct platform_device *pdev)
 			__func__, "qcom,default-clk-id");
 		default_clk_id = RX_CORE_CLK;
 	}
-	ret = of_property_read_u32(pdev->dev.of_node, cdc_mclk_clk_rate,
-				   &mclk_freq);
-	if (ret) {
-		rx_priv->mclk_freq = MCLK_FREQ;
-	} else {
-		rx_priv->mclk_freq = mclk_freq;
-	}
-	dev_dbg(rx_priv->dev,
-		"%s: mclk_freq = %u\n", __func__, rx_priv->mclk_freq);
 	if (of_find_property(pdev->dev.of_node, is_used_rx_swr_gpio_dt,
 			     NULL)) {
 		ret = of_property_read_u32(pdev->dev.of_node,

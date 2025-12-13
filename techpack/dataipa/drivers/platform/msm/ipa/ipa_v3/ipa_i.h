@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _IPA3_I_H_
@@ -59,11 +59,11 @@
 #define IPA_QMAP_HEADER_LENGTH (4)
 #define IPA_DL_CHECKSUM_LENGTH (8)
 #define IPA_NUM_DESC_PER_SW_TX (3)
-#define IPA_GENERIC_RX_POOL_SZ_WAN 192
+#define IPA_GENERIC_RX_POOL_SZ_WAN 224
 #define IPA_GENERIC_RX_POOL_SZ 192
 #define IPA_GENERIC_RX_PAGE_POOL_SZ_FACTOR 2
-#define IPA_GENERIC_RX_CMN_PAGE_POOL_SZ_FACTOR 4
-#define IPA_GENERIC_RX_CMN_TEMP_POOL_SZ_FACTOR 2
+#define IPA_GENERIC_RX_CMN_PAGE_POOL_SZ_FACTOR 5
+#define IPA_GENERIC_RX_CMN_TEMP_POOL_SZ_FACTOR 3
 #define IPA_UC_FINISH_MAX 6
 #define IPA_UC_WAIT_MIN_SLEEP 1000
 #define IPA_UC_WAII_MAX_SLEEP 1200
@@ -111,14 +111,6 @@
 		pr_debug(DRV_NAME " %s:%d " fmt, __func__, __LINE__, ## args);\
 		if (ipa3_ctx) \
 			IPA_IPC_LOGGING(ipa3_ctx->logbuf_low, \
-				DRV_NAME " %s:%d " fmt, ## args); \
-	} while (0)
-
-#define IPADBG_CLK(fmt, args...) \
-	do { \
-		pr_debug(DRV_NAME " %s:%d " fmt, __func__, __LINE__, ## args);\
-		if (ipa3_ctx) \
-			IPA_IPC_LOGGING(ipa3_ctx->logbuf_clk, \
 				DRV_NAME " %s:%d " fmt, ## args); \
 	} while (0)
 
@@ -1952,7 +1944,6 @@ struct ipa3_app_clock_vote {
  * @modem_cfg_emb_pipe_flt: modem configure embedded pipe filtering rules
  * @logbuf: ipc log buffer for high priority messages
  * @logbuf_low: ipc log buffer for low priority messages
- * @logbuf_clk: ipc log buffer for ipa clock messages
  * @ipa_wdi2: using wdi-2.0
  * @ipa_fltrt_not_hashable: filter/route rules not hashable
  * @use_64_bit_dma_mask: using 64bits dma mask
@@ -2092,7 +2083,6 @@ struct ipa3_context {
 	void *smem_pipe_mem;
 	void *logbuf;
 	void *logbuf_low;
-	void *logbuf_clk;
 	struct ipa3_controller *ctrl;
 	struct idr ipa_idr;
 	struct platform_device *master_pdev;
@@ -2163,7 +2153,6 @@ struct ipa3_context {
 	struct ipa3_mhip_ctx mhip_ctx;
 	struct ipa3_aqc_ctx aqc_ctx;
 	atomic_t ipa_clk_vote;
-	bool gsi_status;
 
 	int (*client_lock_unlock[IPA_MAX_CLNT])(bool is_lock);
 
@@ -3115,7 +3104,6 @@ struct iommu_domain *ipa3_get_smmu_domain_by_type
 int ipa3_iommu_map(struct iommu_domain *domain, unsigned long iova,
 	phys_addr_t paddr, size_t size, int prot);
 int ipa3_ap_suspend(struct device *dev);
-int ipa3_ap_freeze(struct device *dev);
 int ipa3_ap_resume(struct device *dev);
 int ipa3_init_interrupts(void);
 struct iommu_domain *ipa3_get_smmu_domain(void);

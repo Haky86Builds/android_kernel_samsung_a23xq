@@ -158,6 +158,14 @@ static uint32_t adsp_raise_event_opcode[] = {
 	ASM_STREAM_CMD_ENCDEC_EVENTS,
 	ASM_IEC_61937_MEDIA_FMT_EVENT };
 
+#ifdef CONFIG_SEC_SND_ADAPTATION
+struct audio_session *q6asm_get_audio_session(void)
+{
+	return session;
+}
+EXPORT_SYMBOL(q6asm_get_audio_session);
+#endif /* CONFIG_SEC_SND_ADAPTATION */
+
 static int is_adsp_reg_event(uint32_t cmd)
 {
 	int i;
@@ -8843,8 +8851,6 @@ static int q6asm_memory_map_regions(struct audio_client *ac, int dir,
 	}
 	mmap_regions = (struct avs_cmd_shared_mem_map_regions *)
 							mmap_region_cmd;
-
-	mutex_lock(&ac->cmd_lock);
 	q6asm_add_mmaphdr(ac, &mmap_regions->hdr, cmd_size, dir);
 	atomic_set(&ac->mem_state, -1);
 	pr_debug("%s: mmap_region=0x%pK token=0x%x\n", __func__,
@@ -8902,6 +8908,7 @@ static int q6asm_memory_map_regions(struct audio_client *ac, int dir,
 		buffer_node = NULL;
 		goto fail_cmd;
 	}
+	mutex_lock(&ac->cmd_lock);
 
 	for (i = 0; i < bufcnt; i++) {
 		ab = &port->buf[i];
@@ -8914,9 +8921,9 @@ static int q6asm_memory_map_regions(struct audio_client *ac, int dir,
 			buffer_node[i].mmap_hdl);
 	}
 	ac->port[dir].tmp_hdl = 0;
+	mutex_unlock(&ac->cmd_lock);
 	rc = 0;
 fail_cmd:
-	mutex_unlock(&ac->cmd_lock);
 	kfree(mmap_region_cmd);
 	mmap_region_cmd = NULL;
 	return rc;
@@ -11382,11 +11389,12 @@ static int q6asm_get_asm_topology_apptype(struct q6asm_cal_info *cal_info, struc
 			goto unlock;
 		}
 	} else {
-		cal_block = q6asm_find_cal_by_buf_number(ASM_TOPOLOGY_CAL, 0, 0, path);
+		pr_info("%s call q6asm_find_cal_by_buf_number path: %d", __func__, path);
+		cal_block = cal_utils_get_only_cal_block(cal_data[ASM_TOPOLOGY_CAL]);
 		if (cal_block == NULL) {
-			pr_debug("%s: Couldn't find cal_block with buf_number, re-routing "
-				"search using CAL type only\n", __func__);
-			cal_block = cal_utils_get_only_cal_block(cal_data[ASM_TOPOLOGY_CAL]);
+			pr_debug("%s: Couldn't find cal_block with CAL type, re-routing "
+					"search using buf_number\n", __func__);
+			cal_block = q6asm_find_cal_by_buf_number(ASM_TOPOLOGY_CAL, 0, 0, path);
 		}
 		if (cal_block == NULL || cal_utils_is_cal_stale(cal_block))
 			goto unlock;

@@ -9,6 +9,42 @@
 #include "cam_ois_core.h"
 #include "cam_debug_util.h"
 #include "camera_main.h"
+#if defined(CONFIG_SAMSUNG_OIS_MCU_STM32)
+#include "cam_ois_mcu_stm32g.h"
+#if defined(CONFIG_SEC_CAM_OIS_ALGO)
+extern void register_vois_noti(int (*fac_noti_reg)(struct notifier_block *nb), int (*fac_noti_unreg)(struct notifier_block *nb),
+							int (*read_noti_reg)(struct notifier_block *nb),int (*read_noti_unreg)(struct notifier_block *nb),
+							int (*cmd_noti_reg)(struct notifier_block *nb),int (*cmd_noti_unreg)(struct notifier_block *nb));
+#endif
+#endif
+
+#if defined(CONFIG_SAMSUNG_OIS_MCU_STM32)
+struct cam_ois_ctrl_t *g_o_ctrl;
+
+#if IS_ENABLED(CONFIG_ADSP_FACTORY)
+static struct ois_sensor_interface ois_reset;
+extern int ois_reset_register(struct ois_sensor_interface *ois);
+#endif
+#endif 
+
+static int cam_ois_subdev_open(struct v4l2_subdev *sd,
+	struct v4l2_subdev_fh *fh)
+{
+	struct cam_ois_ctrl_t *o_ctrl =
+		v4l2_get_subdevdata(sd);
+
+	if (!o_ctrl) {
+		CAM_ERR(CAM_OIS, "o_ctrl ptr is NULL");
+			return -EINVAL;
+	}
+
+	mutex_lock(&(o_ctrl->ois_mutex));
+	o_ctrl->open_cnt++;
+	CAM_DBG(CAM_OIS, "OIS open count %d", o_ctrl->open_cnt);
+	mutex_unlock(&(o_ctrl->ois_mutex));
+
+	return 0;
+}
 
 static int cam_ois_subdev_close_internal(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
@@ -22,7 +58,14 @@ static int cam_ois_subdev_close_internal(struct v4l2_subdev *sd,
 	}
 
 	mutex_lock(&(o_ctrl->ois_mutex));
-	cam_ois_shutdown(o_ctrl);
+	if (o_ctrl->open_cnt <= 0) {
+		mutex_unlock(&(o_ctrl->ois_mutex));
+		return -EINVAL;
+	}
+	o_ctrl->open_cnt--;
+	CAM_DBG(CAM_OIS, "OIS open count %d", o_ctrl->open_cnt);
+	if (o_ctrl->open_cnt == 0)
+		cam_ois_shutdown(o_ctrl);
 	mutex_unlock(&(o_ctrl->ois_mutex));
 
 	return 0;
@@ -119,8 +162,7 @@ static long cam_ois_init_subdev_do_ioctl(struct v4l2_subdev *sd,
 		break;
 	default:
 		CAM_ERR(CAM_OIS, "Invalid compat ioctl: %d", cmd);
-		rc = -ENOIOCTLCMD;
-		break;
+		rc = -EINVAL;
 	}
 
 	if (!rc) {
@@ -137,6 +179,7 @@ static long cam_ois_init_subdev_do_ioctl(struct v4l2_subdev *sd,
 #endif
 
 static const struct v4l2_subdev_internal_ops cam_ois_internal_ops = {
+	.open  = cam_ois_subdev_open,
 	.close = cam_ois_subdev_close,
 };
 
@@ -179,12 +222,20 @@ static int cam_ois_i2c_driver_probe(struct i2c_client *client,
 	int                          rc = 0;
 	struct cam_ois_ctrl_t       *o_ctrl = NULL;
 	struct cam_ois_soc_private  *soc_private = NULL;
+#if defined(CONFIG_SAMSUNG_OIS_MCU_STM32) || defined(CONFIG_SAMSUNG_OIS_RUMBA_S4)
+	int i = 0;
+#if defined(CONFIG_SAMSUNG_OIS_TAMODE_CONTROL)
+	int ret = 0;
+#endif
+#endif
 
+#if 0
 	if (client == NULL || id == NULL) {
 		CAM_ERR(CAM_OIS, "Invalid Args client: %pK id: %pK",
 			client, id);
 		return -EINVAL;
 	}
+#endif
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
 		CAM_ERR(CAM_OIS, "i2c_check_functionality failed");
@@ -213,6 +264,10 @@ static int cam_ois_i2c_driver_probe(struct i2c_client *client,
 		goto octrl_free;
 	}
 
+	INIT_LIST_HEAD(&(o_ctrl->i2c_init_data.list_head));
+	INIT_LIST_HEAD(&(o_ctrl->i2c_calib_data.list_head));
+	INIT_LIST_HEAD(&(o_ctrl->i2c_mode_data.list_head));
+	mutex_init(&(o_ctrl->ois_mutex));
 	o_ctrl->soc_info.soc_private = soc_private;
 	rc = cam_ois_driver_soc_init(o_ctrl);
 	if (rc) {
@@ -225,6 +280,50 @@ static int cam_ois_i2c_driver_probe(struct i2c_client *client,
 		goto soc_free;
 
 	o_ctrl->cam_ois_state = CAM_OIS_INIT;
+	o_ctrl->open_cnt = 0;
+
+#if defined(CONFIG_SAMSUNG_OIS_MCU_STM32) 
+	for (i = 0; i < MAX_BRIDGE_COUNT; i++)
+		o_ctrl->bridge_intf[i].device_hdl = -1;
+	o_ctrl->bridge_cnt = 0;
+	o_ctrl->start_cnt = 0;
+
+	o_ctrl->is_power_up = false;
+	o_ctrl->is_servo_on = false;
+
+	o_ctrl->gyro_raw_x = 0;
+	o_ctrl->gyro_raw_y = 0;
+#if defined(CONFIG_SAMSUNG_OIS_Z_AXIS_CAL)
+	o_ctrl->gyro_raw_z = 0;
+#endif
+	o_ctrl->efs_cal    = 0;
+
+	mutex_init(&(o_ctrl->ois_mode_mutex));
+	o_ctrl->is_thread_started = false;
+	o_ctrl->ois_thread = NULL;
+	INIT_LIST_HEAD(&(o_ctrl->i2c_mode_data.list_head));
+	INIT_LIST_HEAD(&(o_ctrl->list_head_thread.list));
+	init_waitqueue_head(&(o_ctrl->wait));
+	spin_lock_init(&(o_ctrl->thread_spinlock));
+	mutex_init(&(o_ctrl->i2c_init_data_mutex));
+	mutex_init(&(o_ctrl->i2c_mode_data_mutex));
+
+	g_o_ctrl = o_ctrl;
+
+#if IS_ENABLED(CONFIG_ADSP_FACTORY)
+	ois_reset.core = o_ctrl;
+	ois_reset.ois_func = &cam_ois_reset;
+	ois_reset_register(&ois_reset);
+#endif
+
+#if defined(CONFIG_SAMSUNG_OIS_TAMODE_CONTROL)
+	o_ctrl->nb.notifier_call = ps_notifier_cb;
+	ret = power_supply_reg_notifier(&o_ctrl->nb);
+	if (ret)
+		CAM_ERR(CAM_OIS, "ois ps_reg_notifier failed: %d", ret);
+	o_ctrl->ois_tamode_onoff = false;
+#endif
+#endif
 
 	return rc;
 
@@ -278,6 +377,12 @@ static int cam_ois_component_bind(struct device *dev,
 	struct cam_ois_ctrl_t          *o_ctrl = NULL;
 	struct cam_ois_soc_private     *soc_private = NULL;
 	struct platform_device *pdev = to_platform_device(dev);
+#if defined(CONFIG_SAMSUNG_OIS_MCU_STM32)
+	int i = 0;
+#if defined(CONFIG_SAMSUNG_OIS_TAMODE_CONTROL)
+	int ret = 0;
+#endif
+#endif	
 
 	o_ctrl = kzalloc(sizeof(struct cam_ois_ctrl_t), GFP_KERNEL);
 	if (!o_ctrl)
@@ -324,20 +429,68 @@ static int cam_ois_component_bind(struct device *dev,
 		CAM_ERR(CAM_OIS, "failed: to update i2c info rc %d", rc);
 		goto unreg_subdev;
 	}
+#if !defined(CONFIG_SAMSUNG_OIS_MCU_STM32)
 	o_ctrl->bridge_intf.device_hdl = -1;
+#endif 
 
 	platform_set_drvdata(pdev, o_ctrl);
 	o_ctrl->cam_ois_state = CAM_OIS_INIT;
-	CAM_DBG(CAM_OIS, "Component bound successfully");
+	o_ctrl->open_cnt = 0;
+
+#if defined(CONFIG_SAMSUNG_OIS_MCU_STM32)
+	for (i = 0; i < MAX_BRIDGE_COUNT; i++)
+		o_ctrl->bridge_intf[i].device_hdl = -1;
+	o_ctrl->bridge_cnt = 0;
+	o_ctrl->start_cnt = 0;
+
+	o_ctrl->is_power_up = false;
+	o_ctrl->is_servo_on = false;
+
+	o_ctrl->gyro_raw_x = 0;
+	o_ctrl->gyro_raw_y = 0;
+#if defined(CONFIG_SAMSUNG_OIS_Z_AXIS_CAL)
+	o_ctrl->gyro_raw_z = 0;
+#endif
+	o_ctrl->efs_cal    = 0;
+
+	mutex_init(&(o_ctrl->ois_mode_mutex));
+	o_ctrl->is_thread_started = false;
+	o_ctrl->ois_thread = NULL;
+	INIT_LIST_HEAD(&(o_ctrl->list_head_thread.list));
+	init_waitqueue_head(&(o_ctrl->wait));
+	spin_lock_init(&(o_ctrl->thread_spinlock));
+	mutex_init(&(o_ctrl->i2c_init_data_mutex));
+	mutex_init(&(o_ctrl->i2c_mode_data_mutex));
+
+	g_o_ctrl = o_ctrl;
+
+#if IS_ENABLED(CONFIG_ADSP_FACTORY)
+	ois_reset.core = o_ctrl;
+	ois_reset.ois_func = &cam_ois_reset;
+	ois_reset_register(&ois_reset);
+#endif
+
+#if defined(CONFIG_SAMSUNG_OIS_TAMODE_CONTROL)
+	o_ctrl->nb.notifier_call = ps_notifier_cb;
+	ret = power_supply_reg_notifier(&o_ctrl->nb);
+	if (ret)
+		CAM_ERR(CAM_OIS, "ois ps_reg_notifier failed: %d", ret);
+	o_ctrl->ois_tamode_onoff = false;
+#endif
+#endif
+
 	return rc;
 unreg_subdev:
 	cam_unregister_subdev(&(o_ctrl->v4l2_dev_str));
 free_soc:
 	kfree(soc_private);
+	soc_private = NULL;
 free_cci_client:
 	kfree(o_ctrl->io_master_info.cci_client);
+	o_ctrl->io_master_info.cci_client = NULL;
 free_o_ctrl:
 	kfree(o_ctrl);
+	o_ctrl = NULL;
 	return rc;
 }
 
@@ -352,7 +505,7 @@ static void cam_ois_component_unbind(struct device *dev,
 	struct platform_device *pdev = to_platform_device(dev);
 
 	o_ctrl = platform_get_drvdata(pdev);
-	if (!o_ctrl) {
+	if (NULL == o_ctrl) {
 		CAM_ERR(CAM_OIS, "ois device is NULL");
 		return;
 	}
@@ -369,13 +522,22 @@ static void cam_ois_component_unbind(struct device *dev,
 
 	soc_private =
 		(struct cam_ois_soc_private *)o_ctrl->soc_info.soc_private;
+	if(NULL == soc_private){
+		CAM_ERR(CAM_OIS, "ois soc_private is NULL");
+		return;
+	}
 	power_info = &soc_private->power_info;
 
 	kfree(o_ctrl->soc_info.soc_private);
-	kfree(o_ctrl->io_master_info.cci_client);
+	o_ctrl->soc_info.soc_private = NULL;
+	if(NULL != o_ctrl->io_master_info.cci_client){
+	    kfree(o_ctrl->io_master_info.cci_client);
+	    o_ctrl->io_master_info.cci_client = NULL;
+	}
 	platform_set_drvdata(pdev, NULL);
 	v4l2_set_subdevdata(&o_ctrl->v4l2_dev_str.sd, NULL);
 	kfree(o_ctrl);
+	o_ctrl = NULL;
 }
 
 const static struct component_ops cam_ois_component_ops = {
@@ -429,7 +591,9 @@ static struct i2c_driver cam_ois_i2c_driver = {
 	.probe  = cam_ois_i2c_driver_probe,
 	.remove = cam_ois_i2c_driver_remove,
 	.driver = {
-		.name = "msm_ois",
+		.name = "qcom,ois",
+		.owner = THIS_MODULE, 
+		.of_match_table = cam_ois_dt_match,
 	},
 };
 
@@ -454,7 +618,13 @@ int cam_ois_driver_init(void)
 		CAM_ERR(CAM_OIS, "i2c_add_driver failed rc = %d", rc);
 		return rc;
 	}
-
+#if defined(CONFIG_SAMSUNG_OIS_MCU_STM32)
+#if defined(CONFIG_SEC_CAM_OIS_ALGO)
+	register_vois_noti(&cam_ois_factory_mode_notifier_register, &cam_ois_factory_mode_notifier_unregister,
+					&cam_ois_reg_read_notifier_register,&cam_ois_reg_read_notifier_unregister,
+					&cam_ois_cmd_notifier_register,&cam_ois_cmd_notifier_unregister);
+#endif
+#endif
 	registered_driver.i2c_driver = 1;
 	return rc;
 }

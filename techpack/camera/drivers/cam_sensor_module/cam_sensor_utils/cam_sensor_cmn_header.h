@@ -327,6 +327,8 @@ struct cam_camera_slave_info {
 	uint16_t sensor_id_reg_addr;
 	uint16_t sensor_id;
 	uint16_t sensor_id_mask;
+	uint16_t version_id_reg_addr;
+	uint16_t version_id;
 };
 
 struct msm_sensor_init_params {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -21,6 +21,9 @@
 #include <ipc/apr.h>
 #include "adsp_err.h"
 #include <soc/qcom/secure_buffer.h>
+#ifdef CONFIG_SEC_SND_ADAPTATION
+#include <dsp/q6voice_adaptation.h>
+#endif /* CONFIG_SEC_SND_ADAPTATION */
 
 #define TIMEOUT_MS 1000
 
@@ -1036,6 +1039,10 @@ int adm_apr_send_pkt(void *data, wait_queue_head_t *wait,
 			pr_err("%s: DSP returned error[%s]\n", __func__,
 				adsp_err_get_err_str(atomic_read(copp_stat)));
 			ret = adsp_err_get_lnx_err_code(atomic_read(copp_stat));
+#ifdef CONFIG_SEC_SND_DEBUG
+		if (ret == ENOMEM)
+			panic("%s: memory alloc failed.\n", __func__);
+#endif /* CONFIG_SEC_SND_DEBUG */
 		} else	if (!ret) {
 			pr_err_ratelimited("%s: request timedout\n",
 				__func__);
@@ -1713,11 +1720,16 @@ static int32_t adm_callback(struct apr_client_data *data, void *priv)
 		if (data->opcode == APR_BASIC_RSP_RESULT) {
 			pr_debug("%s: APR_BASIC_RSP_RESULT id 0x%x\n",
 				__func__, payload[0]);
-			if (data->payload_size <
-					(2 * sizeof(uint32_t))) {
-				pr_err("%s: Invalid payload size %d\n",
-					__func__, data->payload_size);
-				return 0;
+
+			if (!((client_id != ADM_CLIENT_ID_SOURCE_TRACKING) &&
+			     ((payload[0] == ADM_CMD_SET_PP_PARAMS_V5) ||
+			      (payload[0] == ADM_CMD_SET_PP_PARAMS_V6)))) {
+				if (data->payload_size <
+						(2 * sizeof(uint32_t))) {
+					pr_err("%s: Invalid payload size %d\n",
+						__func__, data->payload_size);
+					return 0;
+				}
 			}
 
 			if (payload[1] != 0) {
@@ -2875,6 +2887,11 @@ static int adm_arrange_mch_map_v8(
 		goto non_mch_path;
 	};
 
+	pr_info("%s : channel_mode = %d, set_channel_map = %d\n",
+		__func__,
+		channel_mode,
+		multi_ch_maps[idx].set_channel_map);
+
 	if (port_channel_map[port_idx].set_channel_map ||
 		 multi_ch_maps[idx].set_channel_map) {
 		if (port_channel_map[port_idx].set_channel_map)
@@ -3428,9 +3445,11 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 					ec_ref_port_cfg->sampling_rate :
 					this_adm.ec_ref_rx_sampling_rate;
 
-	pr_debug("%s:port %#x path:%d rate:%d mode:%d perf_mode:%d,topo_id %d\n",
+	pr_info("%s:port %#x path:%d rate:%d mode:%d perf_mode:%d,topo_id %d\n",
 		 __func__, port_id, path, rate, channel_mode, perf_mode,
 		 topology);
+	pr_info("%s:bit_width:%d app_type:%#x acdb_id:%d\n",
+		__func__, bit_width, app_type, acdb_id);
 
 	port_id = q6audio_convert_virtual_to_portid(port_id);
 	port_idx = adm_validate_and_get_port_index(port_id);
@@ -3497,6 +3516,18 @@ int adm_open_v2(int port_id, int path, int rate, int channel_mode, int topology,
 		    (rate != ADM_CMD_COPP_OPEN_SAMPLE_RATE_32K))
 			rate = 16000;
 	}
+
+#ifdef CONFIG_SEC_SND_ADAPTATION
+	if ((topology == VPM_TX_SM_LVVEFQ_COPP_TOPOLOGY) ||
+		(topology == VPM_TX_DM_LVVEFQ_COPP_TOPOLOGY) ||
+		(topology == VPM_TX_SM_LVSAFQ_COPP_TOPOLOGY) ||
+		(topology == VPM_TX_DM_LVSAFQ_COPP_TOPOLOGY) ||
+		(topology == VOICE_TX_DIAMONDVOICE_FVSAM_SM) ||
+		(topology == VOICE_TX_DIAMONDVOICE_FVSAM_DM) ||
+		(topology == VOICE_TX_DIAMONDVOICE_FVSAM_QM) ||
+		(topology == VOICE_TX_DIAMONDVOICE_FRSAM_DM))
+		rate = 16000;
+#endif /* CONFIG_SEC_SND_ADAPTATION */
 
 	if (topology == FFECNS_TOPOLOGY) {
 		this_adm.ffecns_port_id = port_id;
@@ -3910,14 +3941,10 @@ void adm_copp_mfc_cfg(int port_id, int copp_idx, int dst_sample_rate)
 		pr_err("%s: unable to get channal map\n", __func__);
 		goto fail_cmd;
 	}
-	if (mfc_cfg.num_channels <= AUDPROC_MFC_OUT_CHANNELS_MAX) {
-		for (i = 0; i < mfc_cfg.num_channels; i++)
-			mfc_cfg.channel_type[i] =
+
+	for (i = 0; i < mfc_cfg.num_channels; i++)
+		mfc_cfg.channel_type[i] =
 			(uint16_t) open.dev_channel_mapping[i];
-	} else {
- 		pr_err("%s: size of  num_channels is greater than channel type \n", __func__);
-		goto fail_cmd;
-	}
 
 	atomic_set(&this_adm.copp.stat[port_idx][copp_idx], -1);
 
@@ -4258,7 +4285,7 @@ int adm_close(int port_id, int perf_mode, int copp_idx)
 	struct audio_cal_info_audproc *audproc_cal_info = NULL;
 	int cal_index = ADM_AUDPROC_PERSISTENT_CAL;
 
-	pr_debug("%s: port_id=0x%x perf_mode: %d copp_idx: %d\n", __func__,
+	pr_info("%s: port_id=0x%x perf_mode: %d copp_idx: %d\n", __func__,
 		 port_id, perf_mode, copp_idx);
 
 	port_id = q6audio_convert_virtual_to_portid(port_id);

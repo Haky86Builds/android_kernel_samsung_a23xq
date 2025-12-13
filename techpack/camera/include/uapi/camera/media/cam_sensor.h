@@ -79,6 +79,7 @@ struct cam_eeprom_query_cap_t {
 	__u32            slot_info;
 	__u16            eeprom_kernel_probe;
 	__u16            is_multimodule_mode;
+	__u32            dualization_id;
 } __attribute__((packed));
 
 /**
@@ -137,6 +138,12 @@ struct cam_cmd_ois_info {
 	__u8                  cmd_type;
 	__u8                  ois_fw_flag;
 	__u8                  is_ois_calib;
+#if 1
+	__u32                 gyro_raw_x;
+	__u32                 gyro_raw_y;
+	__u32                 gyro_raw_z;
+	__u32                 efs_cal;
+#endif
 	char                  ois_name[MAX_OIS_NAME_SIZE];
 	struct cam_ois_opcode opcode;
 } __attribute__((packed));
@@ -163,6 +170,8 @@ struct cam_cmd_probe {
 	__u32    reg_addr;
 	__u32    expected_data;
 	__u32    data_mask;
+	__u32    version_reg_addr;
+	__u32    version_id;
 	__u16    camera_id;
 	__u16    reserved;
 } __attribute__((packed));
@@ -377,6 +386,19 @@ struct cam_sensor_acquire_dev {
 	__u64    info_handle;
 } __attribute__((packed));
 
+
+/**
+ * cam_sensor_release_dev : Updates sensor acuire cmd
+ * @session_handle :    Session handle for acquiring device
+ * @device_handle  :    Updates device handle
+ *
+ */
+struct cam_sensor_release_dev {
+	__u32    session_handle;
+	__u32    device_handle;
+} __attribute__((packed));
+
+
 /**
  * cam_sensor_streamon_dev : StreamOn command for the sensor
  * @session_handle :    Session handle for acquiring device
@@ -451,6 +473,7 @@ struct cam_flash_set_on_off {
 	__u16    reserved;
 	__u32    led_current_ma[CAM_FLASH_MAX_LED_TRIGGERS];
 	__u64    time_on_duration_ns;
+	__u32    ispreflashoff;
 } __attribute__((packed));
 
 /**

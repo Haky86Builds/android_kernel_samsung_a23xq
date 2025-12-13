@@ -29,6 +29,18 @@
  * Time(us) = ticks/19.2
  * Time(ns) = ticks/19.2 * 1000
  */
+	//Define All Sensor IDs here
+#define SENSOR_ID_S5KGW1P 0xf971
+#define SENSOR_ID_IMX682  0x0682
+#define SENSOR_ID_GC5035  0x3540
+#define SENSOR_ID_IMX616  0x0616
+#define SENSOR_ID_S5K3L6  0x30c6
+#define SENSOR_ID_S5KGD2  0x0842
+#define SENSOR_ID_S5KJN1  0x38e1
+#define SENSOR_ID_GC08A3  0x08a3
+#define SENSOR_ID_SR846D  0x2000
+#define SENSOR_ID_HI5021  0x0
+
 #define QTIMER_MUL_FACTOR   10000
 #define QTIMER_DIV_FACTOR   192
 

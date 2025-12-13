@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2012-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -4685,6 +4685,7 @@ fail_gen2:
 fail_and_disable_clocks:
 	IPA_ACTIVE_CLIENTS_DEC_EP(sys_in->client);
 fail_gen:
+	IPA_STATS_INC_CNT(ipa3_ctx->stats.pipe_setup_fail_cnt);
 	return result;
 }
 

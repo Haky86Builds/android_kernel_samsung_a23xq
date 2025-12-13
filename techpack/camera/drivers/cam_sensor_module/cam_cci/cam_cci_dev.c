@@ -13,6 +13,7 @@
 
 static struct v4l2_subdev *g_cci_subdev[MAX_CCI];
 static struct dentry *debugfs_root;
+struct device *is_dev = NULL;
 
 struct v4l2_subdev *cam_cci_get_subdev(int cci_dev_index)
 {
@@ -571,6 +572,7 @@ static int cam_cci_platform_probe(struct platform_device *pdev)
 	if (rc)
 		CAM_ERR(CAM_CCI, "failed to add component rc: %d", rc);
 
+        is_dev = &pdev->dev;	
 	return rc;
 }
 

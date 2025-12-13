@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/debugfs.h>
@@ -363,7 +363,6 @@ static int cam_isp_ctx_dump_req(
 			if (dump_to_buff) {
 				if (!cpu_addr || !offset || !buf_len) {
 					CAM_ERR(CAM_ISP, "Invalid args");
-					cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
 					break;
 				}
 				dump_info.src_start = buf_start;
@@ -374,10 +373,8 @@ static int cam_isp_ctx_dump_req(
 				rc = cam_cdm_util_dump_cmd_bufs_v2(
 					&dump_info);
 				*offset = dump_info.dst_offset;
-				if (rc) {
-					cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
+				if (rc)
 					return rc;
-				}
 			} else
 				cam_cdm_util_dump_cmd_buf(buf_start, buf_end);
 			cam_mem_put_cpu_buf(req_isp->cfg[i].handle);
@@ -844,6 +841,7 @@ static int __cam_isp_ctx_handle_buf_done_for_req_list(
 					req_isp->fence_map_out[i].sync_id,
 					CAM_SYNC_STATE_SIGNALED_ERROR,
 					CAM_SYNC_ISP_EVENT_BUBBLE);
+
 			list_add_tail(&req->list, &ctx->free_req_list);
 			CAM_DBG(CAM_REQ,
 				"Move active request %lld to free list(cnt = %d) [flushed], ctx %u",
@@ -4229,16 +4227,6 @@ static int __cam_isp_ctx_rdi_only_sof_in_bubble_state(
 				CAM_DBG(CAM_ISP,
 					"CDM callback detected for req: %lld, possible buf_done delay, waiting for buf_done",
 					req->request_id);
-				if (req_isp->num_fence_map_out ==
-					req_isp->num_deferred_acks) {
-					__cam_isp_handle_deferred_buf_done(ctx_isp, req,
-						true,
-						CAM_SYNC_STATE_SIGNALED_ERROR,
-						CAM_SYNC_ISP_EVENT_BUBBLE);
-
-					__cam_isp_ctx_handle_buf_done_for_req_list(
-						ctx_isp, req);
-				}
 				goto end;
 			} else {
 				CAM_WARN(CAM_ISP,
@@ -4484,7 +4472,7 @@ static struct cam_isp_ctx_irq_ops
 			__cam_isp_ctx_rdi_only_sof_in_top_state,
 			__cam_isp_ctx_reg_upd_in_sof,
 			NULL,
-			__cam_isp_ctx_notify_eof_in_activated_state,
+			NULL,
 			NULL,
 		},
 	},
@@ -4495,7 +4483,7 @@ static struct cam_isp_ctx_irq_ops
 			__cam_isp_ctx_rdi_only_sof_in_applied_state,
 			__cam_isp_ctx_rdi_only_reg_upd_in_applied_state,
 			NULL,
-			__cam_isp_ctx_notify_eof_in_activated_state,
+			NULL,
 			__cam_isp_ctx_buf_done_in_applied,
 		},
 	},
@@ -4506,7 +4494,7 @@ static struct cam_isp_ctx_irq_ops
 			__cam_isp_ctx_rdi_only_sof_in_top_state,
 			NULL,
 			NULL,
-			__cam_isp_ctx_notify_eof_in_activated_state,
+			NULL,
 			__cam_isp_ctx_buf_done_in_epoch,
 		},
 	},
@@ -4517,7 +4505,7 @@ static struct cam_isp_ctx_irq_ops
 			__cam_isp_ctx_rdi_only_sof_in_bubble_state,
 			__cam_isp_ctx_rdi_only_reg_upd_in_bubble_state,
 			NULL,
-			__cam_isp_ctx_notify_eof_in_activated_state,
+			NULL,
 			__cam_isp_ctx_buf_done_in_bubble,
 		},
 	},
@@ -4528,7 +4516,7 @@ static struct cam_isp_ctx_irq_ops
 			__cam_isp_ctx_rdi_only_sof_in_bubble_applied,
 			__cam_isp_ctx_rdi_only_reg_upd_in_bubble_applied_state,
 			NULL,
-			__cam_isp_ctx_notify_eof_in_activated_state,
+			NULL,
 			__cam_isp_ctx_buf_done_in_bubble_applied,
 		},
 	},
@@ -4791,10 +4779,8 @@ static int __cam_isp_ctx_config_dev_in_top_state(
 	if ((len < sizeof(struct cam_packet)) ||
 		((size_t)cmd->offset >= len - sizeof(struct cam_packet))) {
 		CAM_ERR(CAM_ISP, "invalid buff length: %zu or offset", len);
-		spin_lock_bh(&ctx->lock);
-		list_add_tail(&req->list, &ctx->free_req_list);
-		spin_unlock_bh(&ctx->lock);
-		return -EINVAL;
+		rc = -EINVAL;
+		goto free_req;
 	}
 
 	remain_len -= (size_t)cmd->offset;

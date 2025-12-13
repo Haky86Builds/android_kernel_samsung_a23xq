@@ -178,6 +178,25 @@ int32_t camera_io_dev_write_continuous(struct camera_io_master *io_master_info,
 	}
 }
 
+int32_t camera_io_dev_write_seq(struct camera_io_master *io_master_info,
+	uint32_t addr, uint8_t *data,
+	enum camera_sensor_i2c_type addr_type, int32_t num_bytes)
+{
+	if (io_master_info->master_type == I2C_MASTER) {
+		return cam_qup_i2c_write_seq_ss(io_master_info,
+			addr, data, addr_type, num_bytes);
+	} else if (io_master_info->master_type == SPI_MASTER) {
+		return cam_spi_write_seq(io_master_info,
+			addr, data, addr_type, num_bytes);
+	} else {
+		CAM_ERR(CAM_SENSOR, "Invalid Comm. Master:%d",
+			io_master_info->master_type);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+
 int32_t camera_io_init(struct camera_io_master *io_master_info)
 {
 	if (!io_master_info) {

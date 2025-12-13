@@ -129,7 +129,12 @@ SND_SOC_DAILINK_DEFS(multimedia9,
 SND_SOC_DAILINK_DEFS(multimedia11,
 	DAILINK_COMP_ARRAY(COMP_CPU("MultiMedia11")),
 	DAILINK_COMP_ARRAY(COMP_CODEC("snd-soc-dummy", "snd-soc-dummy-dai")),
+#ifdef CONFIG_SEC_SND_PRIMARY
+	DAILINK_COMP_ARRAY(COMP_PLATFORM("msm-pcm-dsp.0")));
+#else
 	DAILINK_COMP_ARRAY(COMP_PLATFORM("msm-compress-dsp")));
+#endif
+
 
 SND_SOC_DAILINK_DEFS(multimedia12,
 	DAILINK_COMP_ARRAY(COMP_CPU("MultiMedia12")),
@@ -315,7 +320,17 @@ SND_SOC_DAILINK_DEFS(slimbus_8_tx,
 	DAILINK_COMP_ARRAY(COMP_CODEC("btfmslim_slave",
 			"btfm_fm_slim_tx")),
 	DAILINK_COMP_ARRAY(COMP_PLATFORM("msm-pcm-routing")));
+#if IS_ENABLED(CONFIG_SND_SOC_TAS256x)
+SND_SOC_DAILINK_DEFS(pri_mi2s_rx,
+	DAILINK_COMP_ARRAY(COMP_CPU("msm-dai-q6-mi2s.0")),
+	DAILINK_COMP_ARRAY(COMP_CODEC("tas256x.18-004c", "tas256x ASI1")),
+	DAILINK_COMP_ARRAY(COMP_PLATFORM("msm-pcm-routing")));
 
+SND_SOC_DAILINK_DEFS(pri_mi2s_tx,
+	DAILINK_COMP_ARRAY(COMP_CPU("msm-dai-q6-mi2s.1")),
+	DAILINK_COMP_ARRAY(COMP_CODEC("tas256x.18-004c", "tas256x ASI1")),
+	DAILINK_COMP_ARRAY(COMP_PLATFORM("msm-pcm-routing")));
+#else
 SND_SOC_DAILINK_DEFS(pri_mi2s_rx,
 	DAILINK_COMP_ARRAY(COMP_CPU("msm-dai-q6-mi2s.0")),
 	DAILINK_COMP_ARRAY(COMP_CODEC("msm-stub-codec.1", "msm-stub-rx")),
@@ -325,6 +340,7 @@ SND_SOC_DAILINK_DEFS(pri_mi2s_tx,
 	DAILINK_COMP_ARRAY(COMP_CPU("msm-dai-q6-mi2s.1")),
 	DAILINK_COMP_ARRAY(COMP_CODEC("msm-stub-codec.1", "msm-stub-tx")),
 	DAILINK_COMP_ARRAY(COMP_PLATFORM("msm-pcm-routing")));
+#endif
 
 SND_SOC_DAILINK_DEFS(sec_mi2s_rx,
 	DAILINK_COMP_ARRAY(COMP_CPU("msm-dai-q6-mi2s.2")),
@@ -459,6 +475,13 @@ SND_SOC_DAILINK_DEFS(afe_loopback_tx,
 	DAILINK_COMP_ARRAY(COMP_CPU("msm-dai-q6-dev.24577")),
 	DAILINK_COMP_ARRAY(COMP_CODEC("msm-stub-codec.1", "msm-stub-tx")),
 	DAILINK_COMP_ARRAY(COMP_PLATFORM("msm-pcm-routing")));
+
+#ifdef CONFIG_SEC_SND_ADAPTATION
+SND_SOC_DAILINK_DEFS(q6audio_adaptation,
+	DAILINK_COMP_ARRAY(COMP_CPU("snd-soc-dummy-dai")),
+	DAILINK_COMP_ARRAY(COMP_CODEC("snd-soc-dummy", "snd-soc-dummy-dai")),
+	DAILINK_COMP_ARRAY(COMP_PLATFORM("q6audio-adaptation")));
+#endif
 
 SND_SOC_DAILINK_DEFS(proxy_tx,
 	DAILINK_COMP_ARRAY(COMP_CPU("msm-dai-q6-dev.8195")),

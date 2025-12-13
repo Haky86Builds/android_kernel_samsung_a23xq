@@ -882,9 +882,26 @@ static int32_t cam_cci_data_queue(struct cci_device *cci_dev,
 						return -EINVAL;
 					}
 
-					if (c_ctrl->cmd ==
-						MSM_CCI_I2C_WRITE_SEQ)
-						reg_addr++;
+					if (c_ctrl->cmd == MSM_CCI_I2C_WRITE_SEQ) {
+						switch (i2c_msg->data_type) {
+							case CAMERA_SENSOR_I2C_TYPE_DWORD:
+								reg_addr++;
+							/* fallthrough */
+							case CAMERA_SENSOR_I2C_TYPE_3B:
+								reg_addr++;
+							/* fallthrough */
+							case CAMERA_SENSOR_I2C_TYPE_WORD:
+								reg_addr++;
+							/* fallthrough */
+							case CAMERA_SENSOR_I2C_TYPE_BYTE:
+								reg_addr++;
+								break;
+							default:
+								CAM_ERR(CAM_CCI,
+									"CCI%d_I2C_M%d_Q%d invalid data type: %d",
+									cci_dev->soc_info.index, master, queue, i2c_msg->data_type);
+						}
+					}
 				} else
 					break;
 			}
@@ -1866,8 +1883,19 @@ int32_t cam_cci_core_cfg(struct v4l2_subdev *sd,
 	}
 
 	if (cci_dev->cci_master_info[master].status < 0) {
-		CAM_WARN(CAM_CCI, "CCI hardware is resetting");
-		return -EAGAIN;
+		CAM_ERR(CAM_CCI, "CCI QC Potential Fix Patch QC CN# 05961139");
+		/* wait for reset done irq */
+		if (!wait_for_completion_timeout(
+			&cci_dev->cci_master_info[master].reset_complete,
+			CCI_TIMEOUT)) {
+			CAM_ERR(CAM_CCI,
+				"Retry:: wait timeout for reset complete for cci: %d master: %d",
+				cci_dev->soc_info.index, master);
+				CAM_WARN(CAM_CCI, "CCI hardware is resetting");
+				return -EAGAIN;
+		}
+		/* Resetting the status byte as reset_complete is serviced */
+		cci_dev->cci_master_info[master].status = 0;
 	}
 	CAM_DBG(CAM_CCI, "master = %d, cmd = %d", master, cci_ctrl->cmd);
 
